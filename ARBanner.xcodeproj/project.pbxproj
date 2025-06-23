@@ -258,6 +258,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera for AR experiences to place logos on walls and take photos.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app may use the microphone for video recording with AR content.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to your photo library to save AR photos.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "This app saves AR photos to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -293,6 +294,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app uses the camera for AR experiences to place logos on walls and take photos.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app may use the microphone for video recording with AR content.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "This app needs access to your photo library to save AR photos.";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "This app saves AR photos to your photo library.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

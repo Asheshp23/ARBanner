@@ -163,8 +163,17 @@ struct ContentView: View {
     }
 
     private func requestPhotoLibraryPermission() {
-        PHPhotoLibrary.requestAuthorization { status in
-            // Permission handling is done automatically by the system
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            switch status {
+            case .authorized, .limited:
+                print("Photo library access granted")
+            case .denied, .restricted:
+                print("Photo library access denied")
+            case .notDetermined:
+                print("Photo library access not determined")
+            @unknown default:
+                print("Unknown photo library authorization status")
+            }
         }
     }
 }
