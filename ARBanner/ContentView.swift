@@ -16,6 +16,15 @@ import RealityKit
 class ARStateManager {
     var placedLogos: [AnchorEntity] = []
     var logoPlaced = false
+    var trackingState: ARCamera.TrackingState = .notAvailable
+    var isTrackingReady: Bool {
+        switch trackingState {
+        case .normal:
+            return true
+        default:
+            return false
+        }
+    }
 
     func addLogo(_ anchor: AnchorEntity) {
         placedLogos.append(anchor)
@@ -30,6 +39,10 @@ class ARStateManager {
     func clearLogos() {
         placedLogos.removeAll()
         logoPlaced = false
+    }
+
+    func updateTrackingState(_ state: ARCamera.TrackingState) {
+        trackingState = state
     }
 }
 
@@ -51,8 +64,25 @@ struct ContentView: View {
             }
 
             VStack(spacing: 16) {
+                // AR Tracking Status
+                if !isSelfieMode {
+                    HStack {
+                        Circle()
+                            .fill(arStateManager.isTrackingReady ? .green : .orange)
+                            .frame(width: 8, height: 8)
+                        Text(trackingStatusText)
+                            .font(.caption)
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.7))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                }
+
                 if !arStateManager.logoPlaced && !isSelfieMode {
-                    Text("Point your camera at a wall and tap to place the logo")
+                    Text(arStateManager.isTrackingReady ? "Point your camera at a wall and tap to place the logo" : "Move your device slowly to scan the environment")
                         .font(.subheadline)
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
@@ -132,6 +162,28 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
             handleScenePhaseChange(newPhase)
+        }
+    }
+
+    private var trackingStatusText: String {
+        switch arStateManager.trackingState {
+        case .normal:
+            return "AR Ready"
+        case .notAvailable:
+            return "AR Starting..."
+        case .limited(let reason):
+            switch reason {
+            case .initializing:
+                return "Initializing AR..."
+            case .excessiveMotion:
+                return "Move device slower"
+            case .insufficientFeatures:
+                return "Point at textured surface"
+            case .relocalizing:
+                return "Relocating..."
+            @unknown default:
+                return "AR Limited"
+            }
         }
     }
 
@@ -220,7 +272,11 @@ struct SelfieARView: UIViewRepresentable {
         // Configure for front camera with optimized settings
         let config = ARFaceTrackingConfiguration()
         config.isLightEstimationEnabled = false // Disable for better performance
-        view.session.run(config, options: [.resetTracking])
+
+        // Only run if session isn't already running to avoid conflicts
+        if view.session.currentFrame == nil {
+            view.session.run(config, options: [.resetTracking])
+        }
 
         // Store reference to the AR view
         DispatchQueue.main.async {

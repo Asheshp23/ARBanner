@@ -27,12 +27,15 @@ struct ARViewContainer: UIViewRepresentable {
         config.environmentTexturing = .none // Disable for better performance
         config.isLightEstimationEnabled = false // Disable for better performance
 
-        // Check if LiDAR is available and configure accordingly
+                // Check if LiDAR is available and configure accordingly
         if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
             config.sceneReconstruction = .mesh
         }
 
-        arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        // Only run if session isn't already running to avoid conflicts
+        if arView.session.currentFrame == nil {
+            arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        }
 
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         arView.addGestureRecognizer(tapGesture)
@@ -92,6 +95,12 @@ struct ARViewContainer: UIViewRepresentable {
                         self?.removePlaneVisualization(for: planeAnchor)
                     }
                 }
+            }
+        }
+
+        func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+            DispatchQueue.main.async { [weak self] in
+                self?.arStateManager?.updateTrackingState(camera.trackingState)
             }
         }
 
