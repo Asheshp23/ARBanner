@@ -26,6 +26,11 @@ class ARStateManager {
         // Note: In a production app, you'd want to persist and restore logo positions
         // For this demo, we'll just track that a logo was placed
     }
+
+    func clearLogos() {
+        placedLogos.removeAll()
+        logoPlaced = false
+    }
 }
 
 struct ContentView: View {
@@ -35,6 +40,7 @@ struct ContentView: View {
     @State private var showingAlert = false
     @State private var alertMessage = ""
     @State private var arStateManager = ARStateManager()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -97,7 +103,7 @@ struct ContentView: View {
                         .foregroundColor(.white)
                         .cornerRadius(12)
                     }
-                    .disabled(!arStateManager.logoPlaced && isSelfieMode)
+                    .disabled(!arStateManager.logoPlaced && !isSelfieMode)
 
                     // Photo Capture Button (only visible in selfie mode)
                     if isSelfieMode {
@@ -124,6 +130,29 @@ struct ContentView: View {
         .onAppear {
             requestPhotoLibraryPermission()
         }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            handleScenePhaseChange(newPhase)
+        }
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        switch phase {
+        case .background:
+            // Pause AR session when app goes to background
+            pauseARSession()
+        case .inactive:
+            // Handle when app becomes inactive
+            break
+        case .active:
+            // Resume AR session when app becomes active
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private func pauseARSession() {
+        arView?.session.pause()
     }
 
     private func capturePhoto() {
@@ -168,7 +197,10 @@ struct ContentView: View {
             case .authorized, .limited:
                 print("Photo library access granted")
             case .denied, .restricted:
-                print("Photo library access denied")
+                DispatchQueue.main.async {
+                    alertMessage = "Photo library access denied. Please enable it in Settings to save photos."
+                    showingAlert = true
+                }
             case .notDetermined:
                 print("Photo library access not determined")
             @unknown default:
@@ -185,22 +217,36 @@ struct SelfieARView: UIViewRepresentable {
     func makeUIView(context: Context) -> ARView {
         let view = ARView(frame: .zero)
 
-        // Configure for front camera
+        // Configure for front camera with optimized settings
         let config = ARFaceTrackingConfiguration()
-        view.session.run(config)
+        config.isLightEstimationEnabled = false // Disable for better performance
+        view.session.run(config, options: [.resetTracking])
 
         // Store reference to the AR view
         DispatchQueue.main.async {
             arView = view
         }
 
-        // Restore any previously placed logos
-        arStateManager.restoreLogosToSession(view)
+        // Add cleanup handler
+        context.coordinator.arView = view
 
         return view
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    class Coordinator: NSObject {
+        weak var arView: ARView?
+
+        deinit {
+            // Properly pause the AR session
+            arView?.session.pause()
+        }
+    }
 }
 
 #Preview {

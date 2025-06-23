@@ -20,10 +20,19 @@ struct ARViewContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero)
+
+        // Optimize AR configuration for better performance
         let config = ARWorldTrackingConfiguration()
-        config.planeDetection = [.vertical] // Detect vertical planes (walls)
-        config.environmentTexturing = .automatic
-        arView.session.run(config)
+        config.planeDetection = [.vertical] // Only detect walls, not horizontal planes
+        config.environmentTexturing = .none // Disable for better performance
+        config.isLightEstimationEnabled = false // Disable for better performance
+
+        // Check if LiDAR is available and configure accordingly
+        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            config.sceneReconstruction = .mesh
+        }
+
+        arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
 
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         arView.addGestureRecognizer(tapGesture)
@@ -45,6 +54,11 @@ struct ARViewContainer: UIViewRepresentable {
         var arStateManager: ARStateManager?
         private var planeAnchors: [UUID: ModelEntity] = [:]
 
+        deinit {
+            // Properly pause the AR session
+            arView?.session.pause()
+        }
+
         func setupPlaneVisualization() {
             guard let arView = arView else { return }
             arView.session.delegate = self
@@ -52,35 +66,65 @@ struct ARViewContainer: UIViewRepresentable {
 
         // MARK: - ARSessionDelegate
         func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-            for anchor in anchors {
-                if let planeAnchor = anchor as? ARPlaneAnchor, planeAnchor.alignment == .vertical {
-                    addPlaneVisualization(for: planeAnchor)
+            DispatchQueue.main.async { [weak self] in
+                for anchor in anchors {
+                    if let planeAnchor = anchor as? ARPlaneAnchor, planeAnchor.alignment == .vertical {
+                        self?.addPlaneVisualization(for: planeAnchor)
+                    }
                 }
             }
         }
 
         func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-            for anchor in anchors {
-                if let planeAnchor = anchor as? ARPlaneAnchor, planeAnchor.alignment == .vertical {
-                    updatePlaneVisualization(for: planeAnchor)
+            DispatchQueue.main.async { [weak self] in
+                for anchor in anchors {
+                    if let planeAnchor = anchor as? ARPlaneAnchor, planeAnchor.alignment == .vertical {
+                        self?.updatePlaneVisualization(for: planeAnchor)
+                    }
                 }
             }
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-            for anchor in anchors {
-                if let planeAnchor = anchor as? ARPlaneAnchor {
-                    removePlaneVisualization(for: planeAnchor)
+            DispatchQueue.main.async { [weak self] in
+                for anchor in anchors {
+                    if let planeAnchor = anchor as? ARPlaneAnchor {
+                        self?.removePlaneVisualization(for: planeAnchor)
+                    }
                 }
             }
+        }
+
+        func session(_ session: ARSession, didFailWithError error: Error) {
+            print("AR Session failed: \(error.localizedDescription)")
+        }
+
+        func sessionWasInterrupted(_ session: ARSession) {
+            print("AR Session was interrupted")
+        }
+
+        func sessionInterruptionEnded(_ session: ARSession) {
+            print("AR Session interruption ended")
+            // Restart the session if needed
+            guard let arView = arView else { return }
+            let config = ARWorldTrackingConfiguration()
+            config.planeDetection = [.vertical]
+            config.environmentTexturing = .none
+            config.isLightEstimationEnabled = false
+            arView.session.run(config, options: [.resetTracking])
         }
 
         private func addPlaneVisualization(for planeAnchor: ARPlaneAnchor) {
             guard let arView = arView else { return }
 
-            let mesh = MeshResource.generatePlane(width: planeAnchor.extent.x, height: planeAnchor.extent.z)
+            // Limit plane visualization size for performance
+            let maxSize: Float = 2.0
+            let width = min(planeAnchor.extent.x, maxSize)
+            let height = min(planeAnchor.extent.z, maxSize)
+
+            let mesh = MeshResource.generatePlane(width: width, height: height)
             var material = UnlitMaterial(color: .blue)
-            material.color = .init(tint: .blue.withAlphaComponent(0.3))
+            material.color = .init(tint: .blue.withAlphaComponent(0.2))
 
             let planeEntity = ModelEntity(mesh: mesh, materials: [material])
             planeEntity.transform.translation = [planeAnchor.center.x, 0, planeAnchor.center.z]
@@ -95,7 +139,12 @@ struct ARViewContainer: UIViewRepresentable {
         private func updatePlaneVisualization(for planeAnchor: ARPlaneAnchor) {
             guard let planeEntity = planeAnchors[planeAnchor.identifier] else { return }
 
-            let mesh = MeshResource.generatePlane(width: planeAnchor.extent.x, height: planeAnchor.extent.z)
+            // Limit plane visualization size for performance
+            let maxSize: Float = 2.0
+            let width = min(planeAnchor.extent.x, maxSize)
+            let height = min(planeAnchor.extent.z, maxSize)
+
+            let mesh = MeshResource.generatePlane(width: width, height: height)
             planeEntity.model?.mesh = mesh
             planeEntity.transform.translation = [planeAnchor.center.x, 0, planeAnchor.center.z]
         }
@@ -120,7 +169,7 @@ struct ARViewContainer: UIViewRepresentable {
             guard let arView = arView, let arStateManager = arStateManager else { return }
 
             let anchor = AnchorEntity(world: transform)
-            let mesh = MeshResource.generatePlane(width: 0.4, height: 0.4)
+            let mesh = MeshResource.generatePlane(width: 0.3, height: 0.3) // Slightly smaller for better performance
 
             let material: RealityKit.Material
             // Try different possible asset names
@@ -151,21 +200,21 @@ struct ARViewContainer: UIViewRepresentable {
 
             let logoPlane = ModelEntity(mesh: mesh, materials: [material])
 
-            // Orient the logo to face outward from the wall
-            let rotation = simd_quatf(transform)
-            logoPlane.transform.rotation = rotation
+            // Simple rotation for better performance
+            logoPlane.transform.rotation = simd_quatf(angle: .pi / 2, axis: [1, 0, 0])
 
-            // Add subtle scale animation
-            var transform1 = logoPlane.transform
-            transform1.scale = [0.8, 0.8, 0.8]
+            // Simplified animation for better performance
+            var startTransform = logoPlane.transform
+            startTransform.scale = [0.1, 0.1, 0.1]
+            logoPlane.transform = startTransform
 
-            var transform2 = logoPlane.transform
-            transform2.scale = [1.0, 1.0, 1.0]
+            var endTransform = logoPlane.transform
+            endTransform.scale = [1.0, 1.0, 1.0]
 
             let animation = try! AnimationResource.generate(with: FromToByAnimation(
-                from: transform1,
-                to: transform2,
-                duration: 0.5
+                from: startTransform,
+                to: endTransform,
+                duration: 0.3
             ))
 
             logoPlane.playAnimation(animation)
@@ -177,7 +226,7 @@ struct ARViewContainer: UIViewRepresentable {
             arStateManager.addLogo(anchor)
 
             // Provide haptic feedback
-            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
             impactFeedback.impactOccurred()
         }
 
