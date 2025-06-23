@@ -55,7 +55,6 @@ struct ARViewContainer: UIViewRepresentable {
     class Coordinator: NSObject, ARSessionDelegate {
         weak var arView: ARView?
         var arStateManager: ARStateManager?
-        private var planeAnchors: [UUID: ModelEntity] = [:]
 
         deinit {
             // Properly pause the AR session
@@ -69,33 +68,15 @@ struct ARViewContainer: UIViewRepresentable {
 
         // MARK: - ARSessionDelegate
         func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-            DispatchQueue.main.async { [weak self] in
-                for anchor in anchors {
-                    if let planeAnchor = anchor as? ARPlaneAnchor, planeAnchor.alignment == .vertical {
-                        self?.addPlaneVisualization(for: planeAnchor)
-                    }
-                }
-            }
+            // No longer adding plane visualizations - just detect planes for placement
         }
 
         func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
-            DispatchQueue.main.async { [weak self] in
-                for anchor in anchors {
-                    if let planeAnchor = anchor as? ARPlaneAnchor, planeAnchor.alignment == .vertical {
-                        self?.updatePlaneVisualization(for: planeAnchor)
-                    }
-                }
-            }
+            // No longer updating plane visualizations
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-            DispatchQueue.main.async { [weak self] in
-                for anchor in anchors {
-                    if let planeAnchor = anchor as? ARPlaneAnchor {
-                        self?.removePlaneVisualization(for: planeAnchor)
-                    }
-                }
-            }
+            // No longer removing plane visualizations
         }
 
         func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
@@ -123,45 +104,6 @@ struct ARViewContainer: UIViewRepresentable {
             arView.session.run(config, options: [.resetTracking])
         }
 
-        private func addPlaneVisualization(for planeAnchor: ARPlaneAnchor) {
-            guard let arView = arView else { return }
-
-            // Limit plane visualization size for performance
-            let maxSize: Float = 2.0
-            let width = min(planeAnchor.extent.x, maxSize)
-            let height = min(planeAnchor.extent.z, maxSize)
-
-            let mesh = MeshResource.generatePlane(width: width, height: height)
-            var material = UnlitMaterial(color: .blue)
-            material.color = .init(tint: .blue.withAlphaComponent(0.2))
-
-            let planeEntity = ModelEntity(mesh: mesh, materials: [material])
-            planeEntity.transform.translation = [planeAnchor.center.x, 0, planeAnchor.center.z]
-
-            let anchorEntity = AnchorEntity(anchor: planeAnchor)
-            anchorEntity.addChild(planeEntity)
-
-            planeAnchors[planeAnchor.identifier] = planeEntity
-            arView.scene.addAnchor(anchorEntity)
-        }
-
-        private func updatePlaneVisualization(for planeAnchor: ARPlaneAnchor) {
-            guard let planeEntity = planeAnchors[planeAnchor.identifier] else { return }
-
-            // Limit plane visualization size for performance
-            let maxSize: Float = 2.0
-            let width = min(planeAnchor.extent.x, maxSize)
-            let height = min(planeAnchor.extent.z, maxSize)
-
-            let mesh = MeshResource.generatePlane(width: width, height: height)
-            planeEntity.model?.mesh = mesh
-            planeEntity.transform.translation = [planeAnchor.center.x, 0, planeAnchor.center.z]
-        }
-
-        private func removePlaneVisualization(for planeAnchor: ARPlaneAnchor) {
-            planeAnchors.removeValue(forKey: planeAnchor.identifier)
-        }
-
         @objc func handleTap(_ sender: UITapGestureRecognizer) {
             guard let arView = arView else { return }
             let tapLocation = sender.location(in: arView)
@@ -169,8 +111,6 @@ struct ARViewContainer: UIViewRepresentable {
 
             if let result = results.first {
                 placeLogo(at: result.worldTransform)
-                // Hide plane visualizations after placing logo
-                hidePlaneVisualizations()
             }
         }
 
@@ -237,17 +177,6 @@ struct ARViewContainer: UIViewRepresentable {
             // Provide haptic feedback
             let impactFeedback = UIImpactFeedbackGenerator(style: .light)
             impactFeedback.impactOccurred()
-        }
-
-        private func hidePlaneVisualizations() {
-            guard let arView = arView else { return }
-
-            for anchor in arView.scene.anchors {
-                if let anchorEntity = anchor as? AnchorEntity,
-                   anchorEntity.anchor is ARPlaneAnchor {
-                    anchorEntity.isEnabled = false
-                }
-            }
         }
     }
 }
