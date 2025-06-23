@@ -122,9 +122,9 @@ struct ARViewContainer: UIViewRepresentable {
             let anchor = AnchorEntity(world: transform)
             let mesh = MeshResource.generatePlane(width: 0.4, height: 0.4)
 
-            let material: Material
+                        let material: Material
             // Try different possible asset names
-            let possibleNames = ["gud-prompt-logo-dark (1)", "logo", "gud-prompt-logo-dark"]
+            let possibleNames = ["logo", "gud-prompt-logo-dark (1)", "gud-prompt-logo-dark"]
             var logoImage: UIImage?
 
             for name in possibleNames {
