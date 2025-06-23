@@ -78,12 +78,12 @@ struct ARViewContainer: UIViewRepresentable {
         private func addPlaneVisualization(for planeAnchor: ARPlaneAnchor) {
             guard let arView = arView else { return }
 
-            let mesh = MeshResource.generatePlane(width: planeAnchor.planeExtent.width, height: planeAnchor.planeExtent.height)
+            let mesh = MeshResource.generatePlane(width: planeAnchor.extent.x, height: planeAnchor.extent.z)
             var material = UnlitMaterial(color: .blue)
             material.color = .init(tint: .blue.withAlphaComponent(0.3))
 
             let planeEntity = ModelEntity(mesh: mesh, materials: [material])
-            planeEntity.transform.translation = [planeAnchor.planeExtent.rotationX, 0, planeAnchor.planeExtent.rotationZ]
+            planeEntity.transform.translation = [planeAnchor.center.x, 0, planeAnchor.center.z]
 
             let anchorEntity = AnchorEntity(anchor: planeAnchor)
             anchorEntity.addChild(planeEntity)
@@ -95,9 +95,9 @@ struct ARViewContainer: UIViewRepresentable {
         private func updatePlaneVisualization(for planeAnchor: ARPlaneAnchor) {
             guard let planeEntity = planeAnchors[planeAnchor.identifier] else { return }
 
-            let mesh = MeshResource.generatePlane(width: planeAnchor.planeExtent.width, height: planeAnchor.planeExtent.height)
+            let mesh = MeshResource.generatePlane(width: planeAnchor.extent.x, height: planeAnchor.extent.z)
             planeEntity.model?.mesh = mesh
-            planeEntity.transform.translation = [planeAnchor.planeExtent.rotationX, 0, planeAnchor.planeExtent.rotationZ]
+            planeEntity.transform.translation = [planeAnchor.center.x, 0, planeAnchor.center.z]
         }
 
         private func removePlaneVisualization(for planeAnchor: ARPlaneAnchor) {
@@ -122,7 +122,7 @@ struct ARViewContainer: UIViewRepresentable {
             let anchor = AnchorEntity(world: transform)
             let mesh = MeshResource.generatePlane(width: 0.4, height: 0.4)
 
-                        let material: Material
+            let material: RealityKit.Material
             // Try different possible asset names
             let possibleNames = ["logo", "gud-prompt-logo-dark (1)", "gud-prompt-logo-dark"]
             var logoImage: UIImage?
@@ -138,7 +138,7 @@ struct ARViewContainer: UIViewRepresentable {
                 do {
                     let texture = try TextureResource.generate(from: cgImage, options: .init(semantic: .color))
                     var unlitMaterial = UnlitMaterial()
-                    unlitMaterial.color = .texture(texture)
+                    unlitMaterial.color = .init(texture: .init(texture))
                     material = unlitMaterial
                 } catch {
                     print("Failed to create texture: \(error)")
@@ -155,13 +155,18 @@ struct ARViewContainer: UIViewRepresentable {
             let rotation = simd_quatf(transform)
             logoPlane.transform.rotation = rotation
 
-            // Add subtle animation
-            let animation = AnimationResource.makeTransform(
-                duration: 0.5,
-                translation: [0, 0, 0.05],
-                scale: [1.1, 1.1, 1.1],
-                rotation: rotation
-            ).repeated(count: 1)
+            // Add subtle scale animation
+            var transform1 = logoPlane.transform
+            transform1.scale = [0.8, 0.8, 0.8]
+
+            var transform2 = logoPlane.transform
+            transform2.scale = [1.0, 1.0, 1.0]
+
+            let animation = try! AnimationResource.generate(with: FromToByAnimation(
+                from: transform1,
+                to: transform2,
+                duration: 0.5
+            ))
 
             logoPlane.playAnimation(animation)
 
@@ -194,9 +199,4 @@ private extension simd_float4x4 {
         let t = columns.3
         return [t.x, t.y, t.z]
     }
-}
-
-extension ARPlaneAnchor.PlaneExtent {
-    var rotationX: Float { return 0 }
-    var rotationZ: Float { return 0 }
 }
