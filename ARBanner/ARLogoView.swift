@@ -8,18 +8,20 @@ import RealityKit
 import ARKit
 
 struct ARLogoView: View {
+    @Binding var arView: ARView?
     let arStateManager: ARStateManager
 
     var body: some View {
-        ARViewContainer(arStateManager: arStateManager).edgesIgnoringSafeArea(.all)
+        ARViewContainer(arView: $arView, arStateManager: arStateManager).edgesIgnoringSafeArea(.all)
     }
 }
 
 struct ARViewContainer: UIViewRepresentable {
+    @Binding var arView: ARView?
     let arStateManager: ARStateManager
 
     func makeUIView(context: Context) -> ARView {
-        let arView = ARView(frame: .zero)
+        let view = ARView(frame: .zero)
 
         // Simplified AR configuration to reduce warnings
         let config = ARWorldTrackingConfiguration()
@@ -33,21 +35,27 @@ struct ARViewContainer: UIViewRepresentable {
         }
 
         // Only run if session isn't already running to avoid conflicts
-        if arView.session.currentFrame == nil {
-            arView.session.run(config, options: [.resetTracking, .removeExistingAnchors])
+        if view.session.currentFrame == nil {
+            view.session.run(config, options: [.resetTracking, .removeExistingAnchors])
         }
 
         let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
-        arView.addGestureRecognizer(tapGesture)
+        view.addGestureRecognizer(tapGesture)
 
         // Add pinch gesture for resizing
         let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
-        arView.addGestureRecognizer(pinchGesture)
+        view.addGestureRecognizer(pinchGesture)
 
-        context.coordinator.arView = arView
+        context.coordinator.arView = view
         context.coordinator.arStateManager = arStateManager
         context.coordinator.setupPlaneVisualization()
-        return arView
+
+        // Store reference to the AR view in the binding
+        DispatchQueue.main.async {
+            arView = view
+        }
+
+        return view
     }
 
     func updateUIView(_ uiView: ARView, context: Context) {}
@@ -82,12 +90,36 @@ struct ARViewContainer: UIViewRepresentable {
         }
 
         func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-            // No longer removing plane visualizations
+            // Check if any of our logo anchors were removed by checking if we have fewer anchors
+            guard let arStateManager = arStateManager else { return }
+
+            // Simple check: if we had logos and now the anchor list is empty after a removal,
+            // it means our logos were cleared
+            if !arStateManager.placedLogos.isEmpty && anchors.count > 0 {
+                print("🗑️ AR session removed anchors, clearing logo state")
+                arStateManager.resetForCameraSwitch()
+            }
         }
 
         func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
             DispatchQueue.main.async { [weak self] in
                 self?.arStateManager?.updateTrackingState(camera.trackingState)
+
+                // If we successfully relocalized and have a saved logo state, restore UI state
+                if camera.trackingState == .normal,
+                   let arStateManager = self?.arStateManager,
+                   arStateManager.logoPlaced && arStateManager.placedLogos.isEmpty {
+                    print("🎯 AR tracking normal and logo state detected - checking for anchors")
+
+                    // Check if there are any anchors in the session (from world map)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        if session.currentFrame?.anchors.isEmpty == false {
+                            // We have anchors from the world map, update our state
+                            arStateManager.logoPlaced = true
+                            print("✅ World map anchors detected - logo state restored")
+                        }
+                    }
+                }
             }
         }
 
@@ -111,7 +143,14 @@ struct ARViewContainer: UIViewRepresentable {
         }
 
         @objc func handleTap(_ sender: UITapGestureRecognizer) {
-            guard let arView = arView else { return }
+            guard let arView = arView, let arStateManager = arStateManager else { return }
+
+            // Only allow placing a logo if none is currently placed
+            guard !arStateManager.logoPlaced else {
+                print("⚠️ Logo already placed, ignoring tap")
+                return
+            }
+
             let tapLocation = sender.location(in: arView)
             let results = arView.raycast(from: tapLocation, allowing: .estimatedPlane, alignment: .vertical)
 
@@ -143,7 +182,7 @@ struct ARViewContainer: UIViewRepresentable {
                 arView.scene.removeAnchor(previousAnchor)
             }
 
-                        let anchor = AnchorEntity(world: transform)
+            let anchor = AnchorEntity(world: transform)
 
             // Load logo image from Assets and calculate proper dimensions
             let material: RealityKit.Material
@@ -224,8 +263,13 @@ struct ARViewContainer: UIViewRepresentable {
             currentLogoEntity = logoPlane
             currentLogoAnchor = anchor
 
-            // Update state manager
-            arStateManager.addLogo(anchor)
+            // Update state manager with both anchor and transform
+            arStateManager.addLogo(anchor, transform: transform)
+
+            // Save world map after a short delay to ensure the AR session is stable
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                arStateManager.saveWorldMap(from: arView.session)
+            }
 
             // Provide haptic feedback
             let impactFeedback = UIImpactFeedbackGenerator(style: .light)
